@@ -1,0 +1,997 @@
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.formatting.rule import FormulaRule, CellIsRule
+from openpyxl.chart import BarChart, LineChart, DoughnutChart, Reference
+import datetime
+
+wb = openpyxl.Workbook()
+# Remove default sheet
+wb.remove(wb.active)
+
+# Color Palette - Dark Navy Blue, White, Light Blue Accents, Status Colors
+NAVY_DARK = "102A43"
+NAVY_MED = "243B53"
+BLUE_ACCENT = "334E68"
+LIGHT_BLUE_HEADER = "486581"
+SKY_BLUE = "627D98"
+ICE_BLUE = "D9E2EC"
+PALE_BLUE = "F0F4F8"
+WHITE = "FFFFFF"
+BORDER_GRAY = "BCCCDC"
+
+GREEN_FILL = "D4EDDA"
+GREEN_TEXT = "155724"
+YELLOW_FILL = "FFF3CD"
+YELLOW_TEXT = "856404"
+RED_FILL = "F8D7DA"
+RED_TEXT = "721C24"
+
+# Styles
+font_title = Font(name="Calibri", size=18, bold=True, color=WHITE)
+font_subtitle = Font(name="Calibri", size=11, italic=True, color=ICE_BLUE)
+font_sec_hdr = Font(name="Calibri", size=12, bold=True, color=WHITE)
+font_tbl_hdr = Font(name="Calibri", size=10, bold=True, color=WHITE)
+font_kpi_lbl = Font(name="Calibri", size=9, bold=True, color=NAVY_MED)
+font_kpi_val = Font(name="Calibri", size=18, bold=True, color=NAVY_DARK)
+font_kpi_iso = Font(name="Calibri", size=8, italic=True, color=SKY_BLUE)
+font_data = Font(name="Calibri", size=10, color="102A43")
+font_bold = Font(name="Calibri", size=10, bold=True, color="102A43")
+font_link = Font(name="Calibri", size=9, bold=True, underline="single", color="1D4ED8")
+
+fill_navy = PatternFill(start_color=NAVY_DARK, end_color=NAVY_DARK, fill_type="solid")
+fill_navy_med = PatternFill(start_color=NAVY_MED, end_color=NAVY_MED, fill_type="solid")
+fill_accent = PatternFill(start_color=BLUE_ACCENT, end_color=BLUE_ACCENT, fill_type="solid")
+fill_ice = PatternFill(start_color=ICE_BLUE, end_color=ICE_BLUE, fill_type="solid")
+fill_pale = PatternFill(start_color=PALE_BLUE, end_color=PALE_BLUE, fill_type="solid")
+fill_white = PatternFill(start_color=WHITE, end_color=WHITE, fill_type="solid")
+
+fill_green = PatternFill(start_color=GREEN_FILL, end_color=GREEN_FILL, fill_type="solid")
+fill_yellow = PatternFill(start_color=YELLOW_FILL, end_color=YELLOW_FILL, fill_type="solid")
+fill_red = PatternFill(start_color=RED_FILL, end_color=RED_FILL, fill_type="solid")
+
+thin_side = Side(border_style="thin", color=BORDER_GRAY)
+med_navy = Side(border_style="medium", color=NAVY_DARK)
+border_cell = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+border_card = Border(left=med_navy, right=thin_side, top=thin_side, bottom=thin_side)
+
+align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+align_left = Alignment(horizontal="left", vertical="center", wrap_text=True)
+align_right = Alignment(horizontal="right", vertical="center", wrap_text=True)
+
+# Create all 13 sheets (12 requested + User Guide & KPI Definitions)
+sheet_names = [
+    "Management Dashboard",
+    "Sample Register",
+    "Analytical Results",
+    "Quality Control Records",
+    "Quality Plans Tracker",
+    "Nonconformities & CAPA",
+    "Equipment & Calibration",
+    "Personnel Competence",
+    "Training Records",
+    "Risk & Opportunities",
+    "PT & ILC",
+    "Lists & Settings",
+    "User Guide & ISO Mapping"
+]
+
+sheets = {name: wb.create_sheet(title=name) for name in sheet_names}
+for ws in sheets.values():
+    ws.views.sheetView[0].showGridLines = True
+
+# Helper to style table sheets
+def setup_data_sheet(ws, title_en, title_ar, iso_ref, headers, rows, col_widths, protection_cols=None):
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
+    ws.cell(1, 1, f"{title_en} | {title_ar}").font = font_title
+    ws.cell(1, 1).fill = fill_navy
+    ws.cell(1, 1).alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[1].height = 32
+
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(headers)-1)
+    ws.cell(2, 1, f"ISO/IEC 17025:2017 Reference: {iso_ref}  |  Note: Illustrative Sample Records for Demonstration").font = font_subtitle
+    ws.cell(2, 1).fill = fill_navy_med
+    ws.cell(2, 1).alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    
+    back_cell = ws.cell(2, len(headers), "← Dashboard")
+    back_cell.font = Font(name="Calibri", size=10, bold=True, underline="single", color=WHITE)
+    back_cell.fill = fill_navy_med
+    back_cell.alignment = align_center
+    back_cell.hyperlink = "#'Management Dashboard'!A1"
+    ws.row_dimensions[2].height = 22
+
+    ws.row_dimensions[3].height = 8
+
+    # Headers at Row 4
+    ws.row_dimensions[4].height = 28
+    for c_idx, h in enumerate(headers, 1):
+        cell = ws.cell(4, c_idx, h)
+        cell.font = font_tbl_hdr
+        cell.fill = fill_accent
+        cell.alignment = align_center
+        cell.border = border_cell
+
+    # Data rows starting Row 5
+    for r_offset, row_data in enumerate(rows):
+        r_idx = 5 + r_offset
+        ws.row_dimensions[r_idx].height = 22
+        row_fill = fill_white if r_offset % 2 == 0 else fill_pale
+        for c_idx, val in enumerate(row_data, 1):
+            cell = ws.cell(r_idx, c_idx, val)
+            cell.font = font_data
+            cell.fill = row_fill
+            cell.border = border_cell
+            if isinstance(val, datetime.date):
+                cell.number_format = "YYYY-MM-DD"
+                cell.alignment = align_center
+            elif isinstance(val, (int, float)) and not str(val).startswith("="):
+                cell.alignment = align_center
+            else:
+                cell.alignment = align_left
+
+    # Set column widths
+    for c_idx, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(c_idx)].width = w
+
+    ws.freeze_panes = "A5"
+    ws.auto_filter.ref = f"A4:{get_column_letter(len(headers))}{4 + len(rows)}"
+
+# ---------------------------------------------------------
+# 12. LISTS & SETTINGS
+# ---------------------------------------------------------
+ws_lists = sheets["Lists & Settings"]
+ws_lists.merge_cells("A1:H1")
+ws_lists["A1"] = "Lists, Reference Parameters & Control Settings | القوائم والإعدادات المرجعية"
+ws_lists["A1"].font = font_title
+ws_lists["A1"].fill = fill_navy
+ws_lists["A1"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
+ws_lists.row_dimensions[1].height = 32
+
+ws_lists["A2"] = "Reference Date (As-Of Date):"
+ws_lists["A2"].font = font_bold
+ws_lists["B2"] = datetime.date(2026, 11, 12)
+ws_lists["B2"].number_format = "YYYY-MM-DD"
+ws_lists["B2"].font = font_bold
+ws_lists["B2"].fill = fill_ice
+ws_lists["B2"].alignment = align_center
+
+ws_lists["D2"] = "Lab Name:"
+ws_lists["D2"].font = font_bold
+ws_lists["E2"] = "Central Water & Environmental Chemistry Laboratory"
+ws_lists["E2"].font = font_data
+
+lists_headers = ["Departments", "Test Methods", "Analysts", "Status Options", "Priority Levels", "ISO 17025 Clauses", "Months", "Years"]
+lists_data = [
+    ["Inorganic Chemistry", "pH & EC (APHA 4500-H+/2510)", "Dr. Mona Khamis", "Completed", "Critical", "Clause 6.2 - Personnel", "Jan", 2025],
+    ["Trace Metals (ICP-OES)", "Major Cations Na/Ca/Mg (APHA 3120)", "Ahmed Hassan", "In Progress", "High", "Clause 6.4 - Equipment", "Feb", 2026],
+    ["Organic & Nutrients", "Nitrate & Sulfate (IC - EPA 300.0)", "Sara Mahmoud", "Overdue", "Medium", "Clause 6.5 - Metrological Traceability", "Mar", 2027],
+    ["Physical & Demand", "COD & BOD5 (APHA 5220/5210)", "Omar Farouk", "Pending", "Low", "Clause 7.2 - Method Verification", "Apr", ""],
+    ["Quality Assurance", "Heavy Metals Pb/Cd/As (ICP-OES)", "Nadia Youssef", "Closed", "", "Clause 7.5 - Technical Records", "May", ""],
+    ["", "Turbidity & TDS (APHA 2130/2540)", "Tarek El-Sayed", "Open", "", "Clause 7.6 - Measurement Uncertainty", "Jun", ""],
+    ["", "Alkalinity & Hardness (APHA 2320/2340)", "", "Out of Service", "", "Clause 7.7 - Validity of Results", "Jul", ""],
+    ["", "", "", "Operational", "", "Clause 7.8 - Reporting of Results", "Aug", ""],
+    ["", "", "", "Due Soon", "", "Clause 7.9 - Complaints", "Sep", ""],
+    ["", "", "", "", "", "Clause 7.10 - Nonconforming Work", "Oct", ""],
+    ["", "", "", "", "", "Clause 7.11 - Data & Info Control", "Nov", ""],
+    ["", "", "", "", "", "Clause 8.5 - Risks & Opportunities", "Dec", ""],
+    ["", "", "", "", "", "Clause 8.7 - Corrective Actions", "", ""],
+    ["", "", "", "", "", "Clause 8.8 - Internal Audits", "", ""],
+    ["", "", "", "", "", "Clause 8.9 - Management Reviews", "", ""],
+]
+
+for c_idx, h in enumerate(lists_headers, 1):
+    c = ws_lists.cell(4, c_idx, h)
+    c.font = font_tbl_hdr
+    c.fill = fill_accent
+    c.alignment = align_center
+    c.border = border_cell
+
+for r_off, r_vals in enumerate(lists_data):
+    for c_idx, val in enumerate(r_vals, 1):
+        c = ws_lists.cell(5 + r_off, c_idx, val)
+        c.font = font_data
+        c.border = border_cell
+        c.alignment = align_center if c_idx >= 7 else align_left
+
+for idx, w in enumerate([24, 34, 22, 18, 16, 36, 12, 12], 1):
+    ws_lists.column_dimensions[get_column_letter(idx)].width = w
+
+# ---------------------------------------------------------
+# 2. SAMPLE REGISTER (Clause 7.1, 7.4, 7.5, 7.8)
+# ---------------------------------------------------------
+sr_headers = [
+    "Sample ID", "Sample Source / Client", "Matrix Type", "Department",
+    "Date Received", "Month", "Year", "Due Date", "Report Date",
+    "Tests Count", "Analysis Status", "On-Time Status", "Assigned Analyst"
+]
+sr_rows = [
+    ["SMP-2026-001", "New Valley Municipal Wells - Well 4", "Groundwater", "Inorganic Chemistry", datetime.date(2026, 9, 5), '=TEXT(E5,"mmm")', '=YEAR(E5)', datetime.date(2026, 9, 12), datetime.date(2026, 9, 11), 6, "Completed", '=IF(K5<>"Completed","Pending",IF(I5<=H5,"On-Time","Delayed"))', "Dr. Mona Khamis"],
+    ["SMP-2026-002", "Kharga Water Treatment Plant - Outlet", "Drinking Water", "Inorganic Chemistry", datetime.date(2026, 9, 14), '=TEXT(E6,"mmm")', '=YEAR(E6)', datetime.date(2026, 9, 21), datetime.date(2026, 9, 20), 5, "Completed", '=IF(K6<>"Completed","Pending",IF(I6<=H6,"On-Time","Delayed"))', "Ahmed Hassan"],
+    ["SMP-2026-003", "Dakhla Agricultural Irrigation Canal", "Irrigation Water", "Trace Metals (ICP-OES)", datetime.date(2026, 10, 2), '=TEXT(E7,"mmm")', '=YEAR(E7)', datetime.date(2026, 10, 9), datetime.date(2026, 10, 8), 8, "Completed", '=IF(K7<>"Completed","Pending",IF(I7<=H7,"On-Time","Delayed"))', "Dr. Mona Khamis"],
+    ["SMP-2026-004", "Industrial Zone Effluent Monitoring", "Wastewater", "Physical & Demand", datetime.date(2026, 10, 10), '=TEXT(E8,"mmm")', '=YEAR(E8)', datetime.date(2026, 10, 17), datetime.date(2026, 10, 19), 7, "Completed", '=IF(K8<>"Completed","Pending",IF(I8<=H8,"On-Time","Delayed"))', "Omar Farouk"],
+    ["SMP-2026-005", "Farafra Oasis Desalination Unit", "Drinking Water", "Organic & Nutrients", datetime.date(2026, 10, 18), '=TEXT(E9,"mmm")', '=YEAR(E9)', datetime.date(2026, 10, 25), datetime.date(2026, 10, 24), 4, "Completed", '=IF(K9<>"Completed","Pending",IF(I9<=H9,"On-Time","Delayed"))', "Sara Mahmoud"],
+    ["SMP-2026-006", "Baris Deep Aquifer Borehole #2", "Groundwater", "Inorganic Chemistry", datetime.date(2026, 10, 25), '=TEXT(E10,"mmm")', '=YEAR(E10)', datetime.date(2026, 11, 1), datetime.date(2026, 10, 31), 6, "Completed", '=IF(K10<>"Completed","Pending",IF(I10<=H10,"On-Time","Delayed"))', "Ahmed Hassan"],
+    ["SMP-2026-007", "Regional Hospital RO Water System", "Purified Water", "Trace Metals (ICP-OES)", datetime.date(2026, 11, 1), '=TEXT(E11,"mmm")', '=YEAR(E11)', datetime.date(2026, 11, 8), datetime.date(2026, 11, 7), 5, "Completed", '=IF(K11<>"Completed","Pending",IF(I11<=H11,"On-Time","Delayed"))', "Nadia Youssef"],
+    ["SMP-2026-008", "Balat Agricultural Drainage Basin", "Irrigation Water", "Inorganic Chemistry", datetime.date(2026, 11, 4), '=TEXT(E12,"mmm")', '=YEAR(E12)', datetime.date(2026, 11, 11), datetime.date(2026, 11, 10), 6, "Completed", '=IF(K12<>"Completed","Pending",IF(I12<=H12,"On-Time","Delayed"))', "Dr. Mona Khamis"],
+    ["SMP-2026-009", "Mut Municipal Distribution Network", "Drinking Water", "Organic & Nutrients", datetime.date(2026, 11, 7), '=TEXT(E13,"mmm")', '=YEAR(E13)', datetime.date(2026, 11, 14), "", 5, "In Progress", '=IF(K13<>"Completed","Pending",IF(I13<=H13,"On-Time","Delayed"))', "Sara Mahmoud"],
+    ["SMP-2026-010", "Phosphate Mining Runoff Station A", "Surface Water", "Trace Metals (ICP-OES)", datetime.date(2026, 11, 9), '=TEXT(E14,"mmm")', '=YEAR(E14)', datetime.date(2026, 11, 16), "", 7, "In Progress", '=IF(K14<>"Completed","Pending",IF(I14<=H14,"On-Time","Delayed"))', "Nadia Youssef"],
+    ["SMP-2026-011", "Kharga Bottled Water Inspection", "Drinking Water", "Inorganic Chemistry", datetime.date(2026, 11, 10), '=TEXT(E15,"mmm")', '=YEAR(E15)', datetime.date(2026, 11, 17), "", 6, "Pending", '=IF(K15<>"Completed","Pending",IF(I15<=H15,"On-Time","Delayed"))', "Tarek El-Sayed"],
+    ["SMP-2026-012", "Municipal WWTP Secondary Clarifier", "Wastewater", "Physical & Demand", datetime.date(2026, 11, 11), '=TEXT(E16,"mmm")', '=YEAR(E16)', datetime.date(2026, 11, 18), "", 5, "Pending", '=IF(K16<>"Completed","Pending",IF(I16<=H16,"On-Time","Delayed"))', "Omar Farouk"],
+]
+setup_data_sheet(
+    sheets["Sample Register"], "Sample Register & Turnaround Tracking", "سجل العينات ومتابعة زمن الإنجاز",
+    "Clauses 7.1, 7.4, 7.5 & 7.8", sr_headers, sr_rows,
+    [15, 32, 16, 22, 14, 10, 10, 14, 14, 12, 16, 15, 18]
+)
+
+# ---------------------------------------------------------
+# 3. ANALYTICAL RESULTS (Clause 7.2, 7.5, 7.6, 7.8)
+# ---------------------------------------------------------
+ar_headers = [
+    "Result ID", "Sample ID", "Parameter", "Test Method", "Result Value", "Unit",
+    "Regulatory Limit", "Expanded Uncertainty (±)", "Compliance", "Analyst", "Analysis Date", "Technical Reviewer"
+]
+ar_rows = [
+    ["RES-001", "SMP-2026-001", "pH", "pH & EC (APHA 4500-H+/2510)", 7.42, "pH units", "6.5 - 8.5", 0.05, "Within Limit", "Dr. Mona Khamis", datetime.date(2026, 9, 8), "Technical Manager"],
+    ["RES-002", "SMP-2026-001", "Sodium (Na+)", "Major Cations Na/Ca/Mg (APHA 3120)", 118.5, "mg/L", "< 200", 4.2, "Within Limit", "Dr. Mona Khamis", datetime.date(2026, 9, 9), "Technical Manager"],
+    ["RES-003", "SMP-2026-002", "Nitrate (NO3-)", "Nitrate & Sulfate (IC - EPA 300.0)", 12.4, "mg/L", "< 50", 0.8, "Within Limit", "Ahmed Hassan", datetime.date(2026, 9, 18), "Technical Manager"],
+    ["RES-004", "SMP-2026-003", "SAR (Calculated)", "Major Cations Na/Ca/Mg (APHA 3120)", 4.85, "meq/L^0.5", "< 10 (Low Hazard)", 0.25, "Within Limit", "Dr. Mona Khamis", datetime.date(2026, 10, 6), "Technical Manager"],
+    ["RES-005", "SMP-2026-004", "COD", "COD & BOD5 (APHA 5220/5210)", 145.0, "mg O2/L", "< 100", 8.5, "Exceeds Limit", "Omar Farouk", datetime.date(2026, 10, 15), "Technical Manager"],
+    ["RES-006", "SMP-2026-005", "TDS", "Turbidity & TDS (APHA 2130/2540)", 210.0, "mg/L", "< 1000", 6.0, "Within Limit", "Sara Mahmoud", datetime.date(2026, 10, 22), "Technical Manager"],
+    ["RES-007", "SMP-2026-006", "Iron (Fe)", "Heavy Metals Pb/Cd/As (ICP-OES)", 0.42, "mg/L", "< 0.30", 0.03, "Exceeds Limit", "Ahmed Hassan", datetime.date(2026, 10, 29), "Technical Manager"],
+    ["RES-008", "SMP-2026-007", "Lead (Pb)", "Heavy Metals Pb/Cd/As (ICP-OES)", 0.002, "mg/L", "< 0.01", 0.0005, "Within Limit", "Nadia Youssef", datetime.date(2026, 11, 5), "Technical Manager"],
+    ["RES-009", "SMP-2026-008", "Calcium (Ca2+)", "Major Cations Na/Ca/Mg (APHA 3120)", 64.0, "mg/L", "< 200", 2.1, "Within Limit", "Dr. Mona Khamis", datetime.date(2026, 11, 9), "Technical Manager"],
+    ["RES-010", "SMP-2026-008", "Magnesium (Mg2+)", "Major Cations Na/Ca/Mg (APHA 3120)", 28.4, "mg/L", "< 150", 1.3, "Within Limit", "Dr. Mona Khamis", datetime.date(2026, 11, 9), "Technical Manager"],
+]
+setup_data_sheet(
+    sheets["Analytical Results"], "Analytical Test Results & Uncertainty", "نتائج التحاليل الكيميائية واللايقين",
+    "Clauses 7.2, 7.5, 7.6 & 7.8", ar_headers, ar_rows,
+    [13, 15, 18, 30, 13, 12, 18, 20, 15, 18, 14, 18]
+)
+
+# ---------------------------------------------------------
+# 4. QUALITY CONTROL RECORDS (Clause 7.7)
+# ---------------------------------------------------------
+qc_headers = [
+    "QC Run ID", "Date", "Batch ID", "Test Method", "QC Type", "Certified / True Value",
+    "Measured Value", "Recovery (%)", "RPD (%)", "Acceptance Limits", "QC Evaluation", "Analyst"
+]
+qc_rows = [
+    ["QC-2026-01", datetime.date(2026, 9, 8), "B-0901", "pH & EC (APHA 4500-H+/2510)", "CRM / LCS", 7.00, 7.02, '=ROUND((G5/F5)*100,1)', 0.0, "98% - 102%", '=IF(AND(H5>=98,H5<=102),"Accepted","Out-of-Control")', "Dr. Mona Khamis"],
+    ["QC-2026-02", datetime.date(2026, 9, 9), "B-0902", "Major Cations Na/Ca/Mg (APHA 3120)", "Method Blank", 0.00, 0.02, 100.0, 0.0, "< MDL (0.05 mg/L)", '=IF(G6<0.05,"Accepted","Out-of-Control")', "Dr. Mona Khamis"],
+    ["QC-2026-03", datetime.date(2026, 9, 18), "B-0905", "Nitrate & Sulfate (IC - EPA 300.0)", "CRM / LCS", 25.00, 24.40, '=ROUND((G7/F7)*100,1)', 0.0, "90% - 110%", '=IF(AND(H7>=90,H7<=110),"Accepted","Out-of-Control")', "Ahmed Hassan"],
+    ["QC-2026-04", datetime.date(2026, 10, 6), "B-1001", "Major Cations Na/Ca/Mg (APHA 3120)", "Duplicate", 118.50, 119.80, 100.0, '=ROUND(ABS(G8-F8)/((G8+F8)/2)*100,2)', "RPD <= 10%", '=IF(I8<=10,"Accepted","Out-of-Control")', "Dr. Mona Khamis"],
+    ["QC-2026-05", datetime.date(2026, 10, 15), "B-1004", "COD & BOD5 (APHA 5220/5210)", "Matrix Spike", 50.00, 42.10, '=ROUND((G9/F9)*100,1)', 0.0, "85% - 115%", '=IF(AND(H9>=85,H9<=115),"Accepted","Out-of-Control")', "Omar Farouk"],
+    ["QC-2026-06", datetime.date(2026, 10, 22), "B-1007", "Turbidity & TDS (APHA 2130/2540)", "Method Blank", 0.00, 0.10, 100.0, 0.0, "< MDL (1.0 mg/L)", '=IF(G10<1.0,"Accepted","Out-of-Control")', "Sara Mahmoud"],
+    ["QC-2026-07", datetime.date(2026, 10, 29), "B-1010", "Heavy Metals Pb/Cd/As (ICP-OES)", "CRM / LCS", 0.50, 0.49, '=ROUND((G11/F11)*100,1)', 0.0, "90% - 110%", '=IF(AND(H11>=90,H11<=110),"Accepted","Out-of-Control")', "Ahmed Hassan"],
+    ["QC-2026-08", datetime.date(2026, 11, 5), "B-1102", "Heavy Metals Pb/Cd/As (ICP-OES)", "Duplicate", 0.010, 0.0103, 100.0, '=ROUND(ABS(G12-F12)/((G12+F12)/2)*100,2)', "RPD <= 10%", '=IF(I12<=10,"Accepted","Out-of-Control")', "Nadia Youssef"],
+    ["QC-2026-09", datetime.date(2026, 11, 9), "B-1105", "Major Cations Na/Ca/Mg (APHA 3120)", "CRM / LCS", 50.00, 51.20, '=ROUND((G13/F13)*100,1)', 0.0, "90% - 110%", '=IF(AND(H13>=90,H13<=110),"Accepted","Out-of-Control")', "Dr. Mona Khamis"],
+    ["QC-2026-10", datetime.date(2026, 11, 10), "B-1106", "Nitrate & Sulfate (IC - EPA 300.0)", "Method Blank", 0.00, 0.01, 100.0, 0.0, "< MDL (0.05 mg/L)", '=IF(G14<0.05,"Accepted","Out-of-Control")', "Sara Mahmoud"],
+]
+setup_data_sheet(
+    sheets["Quality Control Records"], "Internal Quality Control (IQC) & Control Charts", "سجلات ضبط الجودة الداخلي",
+    "Clause 7.7 - Ensuring the Validity of Results", qc_headers, qc_rows,
+    [13, 13, 12, 30, 15, 18, 16, 14, 12, 18, 16, 18]
+)
+
+# ---------------------------------------------------------
+# 5. QUALITY PLANS TRACKER (Clause 6, 7, 8)
+# ---------------------------------------------------------
+qp_headers = [
+    "Task ID", "Task / Quality Objective Activity", "ISO 17025 Clause", "Responsible Person",
+    "Planned Start Date", "Due Date", "Completion Date", "Priority", "Current Status", "% Completion", "Evidence / Record Reference"
+]
+qp_rows = [
+    ["QP-01", "Annual Internal Audit of Inorganic & ICP-OES Labs", "Clause 8.8 - Internal Audits", "Dr. Mona Khamis", datetime.date(2026, 8, 1), datetime.date(2026, 8, 30), datetime.date(2026, 8, 28), "High", '=IF(G5<>"","Completed",IF(F5<\'Lists & Settings\'!$B$2,"Overdue","In Progress"))', 1.0, "IA-REP-2026-01"],
+    ["QP-02", "Annual Management Review Meeting & Action Plan", "Clause 8.9 - Management Reviews", "Laboratory Director", datetime.date(2026, 9, 10), datetime.date(2026, 9, 30), datetime.date(2026, 9, 29), "Critical", '=IF(G6<>"","Completed",IF(F6<\'Lists & Settings\'!$B$2,"Overdue","In Progress"))', 1.0, "MR-MIN-2026-01"],
+    ["QP-03", "Method Verification for ICP-OES Trace Metals in Brine", "Clause 7.2 - Method Verification", "Nadia Youssef", datetime.date(2026, 9, 15), datetime.date(2026, 10, 15), datetime.date(2026, 10, 14), "High", '=IF(G7<>"","Completed",IF(F7<\'Lists & Settings\'!$B$2,"Overdue","In Progress"))', 1.0, "MVR-ICP-004"],
+    ["QP-04", "Update Measurement Uncertainty Budgets for Water Cations", "Clause 7.6 - Measurement Uncertainty", "Dr. Mona Khamis", datetime.date(2026, 10, 1), datetime.date(2026, 10, 31), "", "High", '=IF(G8<>"","Completed",IF(F8<\'Lists & Settings\'!$B$2,"Overdue","In Progress"))', 0.85, "MU-BUD-2026-02 (Draft)"],
+    ["QP-05", "LIMS Data Integrity & Access Control Audit", "Clause 7.11 - Data & Info Control", "Ahmed Hassan", datetime.date(2026, 10, 15), datetime.date(2026, 11, 20), "", "Medium", '=IF(G9<>"","Completed",IF(F9<\'Lists & Settings\'!$B$2,"Overdue","In Progress"))', 0.70, "IT-CHK-2026-11"],
+    ["QP-06", "CRM & Chemical Reagent Supplier Re-Evaluation", "Clause 6.6 - Externally Provided", "Sara Mahmoud", datetime.date(2026, 10, 20), datetime.date(2026, 11, 15), "", "Medium", '=IF(G10<>"","Completed",IF(F10<\'Lists & Settings\'!$B$2,"Overdue","In Progress"))', 0.80, "SUP-EVAL-2026"],
+    ["QP-07", "Annual Metrological Traceability & Calibration Review", "Clause 6.5 - Metrological Traceability", "Technical Manager", datetime.date(2026, 11, 1), datetime.date(2026, 12, 10), "", "High", '=IF(G11<>"","Completed",IF(F11<\'Lists & Settings\'!$B$2,"Overdue","In Progress"))', 0.40, "CAL-REV-2026"],
+    ["QP-08", "Proficiency Testing (PT) Round Registration for 2027", "Clause 7.7 - Validity of Results", "Dr. Mona Khamis", datetime.date(2026, 11, 5), datetime.date(2026, 12, 15), "", "Medium", '=IF(G12<>"","Completed",IF(F12<\'Lists & Settings\'!$B$2,"Overdue","In Progress"))', 0.50, "PT-PLAN-2027"],
+]
+setup_data_sheet(
+    sheets["Quality Plans Tracker"], "Quality Plans & Objectives Tracker", "متابعة خطط وأهداف الجودة",
+    "Clauses 6.2, 6.5, 6.6, 7.2, 7.6, 7.7, 7.11, 8.8 & 8.9", qp_headers, qp_rows,
+    [11, 42, 28, 20, 15, 14, 15, 12, 15, 14, 24]
+)
+for r in range(5, 13):
+    sheets["Quality Plans Tracker"].cell(r, 10).number_format = "0%"
+
+# ---------------------------------------------------------
+# 6. NONCONFORMITIES & CAPA (Clause 7.9, 7.10, 8.7)
+# ---------------------------------------------------------
+nc_headers = [
+    "NC / CAPA ID", "Date Identified", "Source", "ISO 17025 Clause", "Description of Nonconformity",
+    "Root Cause Analysis", "Corrective Action Plan", "Responsible", "Target Date", "Closure Date", "Status", "Effectiveness Verified"
+]
+nc_rows = [
+    ["NC-2026-01", datetime.date(2026, 8, 28), "Internal Audit", "Clause 6.4 - Equipment", "Intermediate check log for analytical balance BAL-02 missed 1 week", "Lack of automated calendar reminder for backup analyst", "Configured LIMS reminder & updated SOP-EQ-04", "Ahmed Hassan", datetime.date(2026, 9, 15), datetime.date(2026, 9, 12), "Closed", "Yes - Verified"],
+    ["NC-2026-02", datetime.date(2026, 10, 15), "QC Out-of-Control", "Clause 7.7 - Validity of Results", "COD Matrix Spike recovery at 84.2% (below 85% lower limit)", "Chloride interference in high-salinity wastewater sample", "Applied mercuric sulfate masking & re-analyzed batch B-1004", "Omar Farouk", datetime.date(2026, 10, 22), datetime.date(2026, 10, 20), "Closed", "Yes - Verified"],
+    ["NC-2026-03", datetime.date(2026, 10, 28), "Customer Complaint", "Clause 7.9 - Complaints", "Client requested clarification on SAR unit notation on report", "Report template lacked footnote defining meq/L conversion", "Updated test report template REP-01 with explicit SAR formula note", "Dr. Mona Khamis", datetime.date(2026, 11, 18), "", "Open", "Pending"],
+    ["NC-2026-04", datetime.date(2026, 11, 2), "Internal Audit", "Clause 7.5 - Technical Records", "Manual raw data sheet missing second-person review initials", "High sample surge during October irrigation survey", "Enforced mandatory digital sign-off gate prior to report release", "Technical Manager", datetime.date(2026, 11, 25), "", "Open", "Pending"],
+]
+setup_data_sheet(
+    sheets["Nonconformities & CAPA"], "Nonconforming Work, Complaints & Corrective Actions", "حالات عدم المطابقة والشكاوى والإجراءات التصحيحية",
+    "Clauses 7.9, 7.10 & 8.7", nc_headers, nc_rows,
+    [14, 14, 18, 24, 36, 32, 34, 18, 13, 13, 12, 18]
+)
+
+# ---------------------------------------------------------
+# 7. EQUIPMENT & CALIBRATION (Clause 6.4, 6.5)
+# ---------------------------------------------------------
+eq_headers = [
+    "Asset ID", "Equipment Name", "Manufacturer / Model", "Department", "Serial Number",
+    "Last Calibration", "Next Calibration Due", "Days to Due", "Calibration Status",
+    "PM Status", "Operational Status", "Traceability Certificate"
+]
+eq_rows = [
+    ["EQ-001", "ICP-OES Spectrometer", "PerkinElmer Avio 550", "Trace Metals (ICP-OES)", "AV550-8821", datetime.date(2026, 5, 15), datetime.date(2027, 5, 15), '=G5-\'Lists & Settings\'!$B$2', '=IF(H5<0,"Overdue",IF(H5<=30,"Due Soon","Valid"))', "Completed", "Operational", "NIS-CAL-2026-112"],
+    ["EQ-002", "Ion Chromatograph (IC)", "Thermo Dionex Integrion", "Organic & Nutrients", "DX-4410", datetime.date(2026, 6, 10), datetime.date(2027, 6, 10), '=G6-\'Lists & Settings\'!$B$2', '=IF(H6<0,"Overdue",IF(H6<=30,"Due Soon","Valid"))', "Completed", "Operational", "NIS-CAL-2026-145"],
+    ["EQ-003", "Analytical Balance (0.1 mg)", "Mettler Toledo XPR204", "Inorganic Chemistry", "MT-9032", datetime.date(2026, 11, 25) - datetime.timedelta(days=365), datetime.date(2026, 11, 25), '=G7-\'Lists & Settings\'!$B$2', '=IF(H7<0,"Overdue",IF(H7<=30,"Due Soon","Valid"))', "Completed", "Operational", "NIS-CAL-2025-890"],
+    ["EQ-004", "Multi-Parameter pH/EC Meter", "Hach HQ440d", "Inorganic Chemistry", "HQ-7712", datetime.date(2026, 4, 20), datetime.date(2026, 10, 20), '=G8-\'Lists & Settings\'!$B$2', '=IF(H8<0,"Overdue",IF(H8<=30,"Due Soon","Valid"))', "Due Soon", "Operational", "LAB-INT-2026-09"],
+    ["EQ-005", "UV-Vis Spectrophotometer", "Shimadzu UV-1900i", "Organic & Nutrients", "SH-3319", datetime.date(2026, 3, 12), datetime.date(2027, 3, 12), '=G9-\'Lists & Settings\'!$B$2', '=IF(H9<0,"Overdue",IF(H9<=30,"Due Soon","Valid"))', "Completed", "Operational", "NIS-CAL-2026-078"],
+    ["EQ-006", "COD Digestor & Reactor", "Hach DRB200", "Physical & Demand", "DRB-1104", datetime.date(2026, 12, 5) - datetime.timedelta(days=365), datetime.date(2026, 12, 5), '=G10-\'Lists & Settings\'!$B$2', '=IF(H10<0,"Overdue",IF(H10<=30,"Due Soon","Valid"))', "Completed", "Operational", "NIS-CAL-2025-912"],
+    ["EQ-007", "BOD Incubator (20°C)", "WTW TS 606/2-i", "Physical & Demand", "WTW-5521", datetime.date(2026, 2, 10), datetime.date(2027, 2, 10), '=G11-\'Lists & Settings\'!$B$2', '=IF(H11<0,"Overdue",IF(H11<=30,"Due Soon","Valid"))', "In Progress", "Out of Service", "NIS-CAL-2026-041"],
+    ["EQ-008", "Automatic Titrator", "Metrohm 916 Ti-Touch", "Inorganic Chemistry", "MH-6601", datetime.date(2026, 7, 18), datetime.date(2027, 7, 18), '=G12-\'Lists & Settings\'!$B$2', '=IF(H12<0,"Overdue",IF(H12<=30,"Due Soon","Valid"))', "Completed", "Operational", "NIS-CAL-2026-201"],
+]
+setup_data_sheet(
+    sheets["Equipment & Calibration"], "Equipment Inventory, Calibration & Traceability", "سجل الأجهزة والمعايرة والإسناد المترولوجي",
+    "Clauses 6.4 & 6.5", eq_headers, eq_rows,
+    [11, 26, 22, 22, 15, 15, 16, 12, 16, 14, 16, 20]
+)
+
+# ---------------------------------------------------------
+# 8. PERSONNEL COMPETENCE (Clause 6.2)
+# ---------------------------------------------------------
+pc_headers = [
+    "Staff ID", "Analyst Name", "Role / Title", "Department", "Authorized Test Methods",
+    "Last Competence Assessment", "Next Assessment Due", "Assessment Score (%)", "Competence Status", "Authorization Record"
+]
+pc_rows = [
+    ["STF-01", "Dr. Mona Khamis", "Quality Manager & Senior Chemist", "Inorganic Chemistry", "pH/EC; Major Cations (Na/Ca/Mg); Alkalinity", datetime.date(2026, 6, 15), datetime.date(2027, 6, 15), 0.98, "Authorized", "AUTH-2026-01"],
+    ["STF-02", "Ahmed Hassan", "Senior Analytical Chemist", "Inorganic Chemistry", "pH/EC; TDS; Nitrate/Sulfate; Iron", datetime.date(2026, 5, 20), datetime.date(2027, 5, 20), 0.94, "Authorized", "AUTH-2026-02"],
+    ["STF-03", "Sara Mahmoud", "Analytical Chemist", "Organic & Nutrients", "Ion Chromatography (EPA 300.0); TDS", datetime.date(2026, 7, 10), datetime.date(2027, 7, 10), 0.92, "Authorized", "AUTH-2026-03"],
+    ["STF-04", "Omar Farouk", "Environmental Chemist", "Physical & Demand", "COD & BOD5 (APHA 5220/5210); Turbidity", datetime.date(2026, 4, 12), datetime.date(2027, 4, 12), 0.90, "Authorized", "AUTH-2026-04"],
+    ["STF-05", "Nadia Youssef", "ICP-OES Specialist", "Trace Metals (ICP-OES)", "Heavy Metals Pb/Cd/As & Cations (ICP-OES)", datetime.date(2026, 8, 5), datetime.date(2027, 8, 5), 0.96, "Authorized", "AUTH-2026-05"],
+    ["STF-06", "Tarek El-Sayed", "Junior Chemist (Trainee)", "Inorganic Chemistry", "pH/EC (Under Supervision)", datetime.date(2026, 9, 1), datetime.date(2026, 12, 1), 0.82, "Pending Evaluation", "TRN-AUTH-2026-06"],
+]
+setup_data_sheet(
+    sheets["Personnel Competence"], "Personnel Competence & Method Authorization", "كفاءة العاملين وتخويل طرق الاختبار",
+    "Clause 6.2 - Personnel", pc_headers, pc_rows,
+    [11, 20, 26, 22, 36, 18, 18, 16, 18, 18]
+)
+for r in range(5, 11):
+    sheets["Personnel Competence"].cell(r, 8).number_format = "0%"
+
+# ---------------------------------------------------------
+# 9. TRAINING RECORDS (Clause 6.2)
+# ---------------------------------------------------------
+tr_headers = [
+    "Training ID", "Training Course / Workshop", "ISO 17025 Link", "Trainee Name",
+    "Trainer / Provider", "Planned Date", "Completion Date", "Status", "Effectiveness Evaluation"
+]
+tr_rows = [
+    ["TRN-01", "ISO/IEC 17025:2017 Internal Auditor Refresher", "Clause 8.8 & 6.2", "Dr. Mona Khamis", "National Accreditation Council", datetime.date(2026, 5, 10), datetime.date(2026, 5, 12), "Completed", "Passed (96%)"],
+    ["TRN-02", "Measurement Uncertainty Estimation (GUM)", "Clause 7.6", "Ahmed Hassan", "Dr. Mona Khamis", datetime.date(2026, 7, 15), datetime.date(2026, 7, 16), "Completed", "Passed (92%)"],
+    ["TRN-03", "ICP-OES Plasma Optimization & Interference Control", "Clause 7.2 & 6.4", "Nadia Youssef", "PerkinElmer Application Specialist", datetime.date(2026, 8, 20), datetime.date(2026, 8, 22), "Completed", "Passed (95%)"],
+    ["TRN-04", "Ion Chromatography Maintenance & Troubleshooting", "Clause 6.4", "Sara Mahmoud", "Thermo Fisher Technical Team", datetime.date(2026, 9, 18), datetime.date(2026, 9, 19), "Completed", "Passed (90%)"],
+    ["TRN-05", "Water Sampling & Chain of Custody (ISO 5667)", "Clause 7.3", "Tarek El-Sayed", "Senior Sampling Officer", datetime.date(2026, 11, 25), "", "In Progress", "Scheduled"],
+]
+setup_data_sheet(
+    sheets["Training Records"], "Annual Training Plan & Effectiveness Records", "سجلات التدريب وتقييم الفعالية",
+    "Clause 6.2 - Personnel", tr_headers, tr_rows,
+    [13, 38, 18, 20, 28, 14, 15, 14, 20]
+)
+
+# ---------------------------------------------------------
+# 10. RISK & OPPORTUNITIES (Clause 8.5)
+# ---------------------------------------------------------
+rk_headers = [
+    "Risk ID", "Type", "Process / Area", "Risk / Opportunity Description", "Likelihood (1-5)",
+    "Impact (1-5)", "Risk Score", "Risk Level", "Mitigation / Action Plan", "Owner", "Status"
+]
+rk_rows = [
+    ["RSK-01", "Risk", "Equipment & Calibration", "Single-point failure on ICP-OES argon supply or nebulizer", 3, 4, "=E5*F5", '=IF(G5>=15,"High",IF(G5>=8,"Medium","Low"))', "Maintain 2 backup nebulizers & dual-manifold argon cylinders", "Nadia Youssef", "Completed"],
+    ["RSK-02", "Risk", "Reporting & Impartiality", "External pressure on municipal water compliance results", 2, 5, "=E6*F6", '=IF(G6>=15,"High",IF(G6>=8,"Medium","Low"))', "Annual impartiality pledge & blinded sample coding", "Dr. Mona Khamis", "Completed"],
+    ["RSK-03", "Risk", "Turnaround Time", "Peak sample load during quarterly groundwater monitoring", 4, 3, "=E7*F7", '=IF(G7>=15,"High",IF(G7>=8,"Medium","Low"))', "Cross-train junior chemist on routine pH/EC/TDS tests", "Technical Manager", "In Progress"],
+    ["RSK-04", "Opportunity", "Digital Automation", "Automate SAR & ionic balance checks in LIMS", 4, 4, "=E8*F8", '=IF(G8>=15,"High",IF(G8>=8,"Medium","Low"))', "Deploy validated Excel/LIMS QC validation templates", "Dr. Mona Khamis", "Completed"],
+]
+setup_data_sheet(
+    sheets["Risk & Opportunities"], "Risks & Opportunities Register", "سجل المخاطر والفرص",
+    "Clause 8.5 - Actions to Address Risks and Opportunities", rk_headers, rk_rows,
+    [11, 13, 22, 38, 15, 13, 12, 13, 38, 18, 14]
+)
+
+# ---------------------------------------------------------
+# 11. PT / INTERLABORATORY COMPARISONS (Clause 7.7.2)
+# ---------------------------------------------------------
+pt_headers = [
+    "PT Round ID", "PT Provider", "Matrix", "Parameter", "Assigned Value",
+    "Lab Result", "Std Dev (σ)", "Z-Score", "Performance Evaluation", "Participation Date", "Report Reference"
+]
+pt_rows = [
+    ["PT-2026-W01", "LGC Standards (Aquacheck)", "Drinking Water", "Sodium (Na+)", 85.0, 86.2, 3.4, '=ROUND((F5-E5)/G5,2)', '=IF(ABS(H5)<=2,"Satisfactory",IF(ABS(H5)<3,"Questionable","Unsatisfactory"))', datetime.date(2026, 6, 20), "PT-REP-2026-01"],
+    ["PT-2026-W02", "LGC Standards (Aquacheck)", "Drinking Water", "Nitrate (NO3-)", 22.5, 21.8, 1.1, '=ROUND((F6-E6)/G6,2)', '=IF(ABS(H6)<=2,"Satisfactory",IF(ABS(H6)<3,"Questionable","Unsatisfactory"))', datetime.date(2026, 6, 20), "PT-REP-2026-01"],
+    ["PT-2026-W03", "ERA Waters", "Wastewater", "COD", 160.0, 168.5, 9.5, '=ROUND((F7-E7)/G7,2)', '=IF(ABS(H7)<=2,"Satisfactory",IF(ABS(H7)<3,"Questionable","Unsatisfactory"))', datetime.date(2026, 8, 14), "PT-REP-2026-02"],
+    ["PT-2026-W04", "ERA Waters", "Surface Water", "Lead (Pb)", 0.025, 0.024, 0.002, '=ROUND((F8-E8)/G8,2)', '=IF(ABS(H8)<=2,"Satisfactory",IF(ABS(H8)<3,"Questionable","Unsatisfactory"))', datetime.date(2026, 9, 25), "PT-REP-2026-03"],
+    ["PT-2026-W05", "National Metrology ILC", "Groundwater", "pH", 7.65, 7.68, 0.08, '=ROUND((F9-E9)/G9,2)', '=IF(ABS(H9)<=2,"Satisfactory",IF(ABS(H9)<3,"Questionable","Unsatisfactory"))', datetime.date(2026, 10, 18), "PT-REP-2026-04"],
+]
+setup_data_sheet(
+    sheets["PT & ILC"], "Proficiency Testing (PT) & Interlaboratory Comparisons", "اختبارات الكفاءة والمقارنات البينية",
+    "Clause 7.7.2 - Monitoring Performance by Comparison with Other Laboratories", pt_headers, pt_rows,
+    [14, 24, 16, 18, 15, 14, 13, 12, 22, 16, 18]
+)
+
+# ---------------------------------------------------------
+# 1. MANAGEMENT DASHBOARD
+# ---------------------------------------------------------
+ws_dash = sheets["Management Dashboard"]
+ws_dash.views.sheetView[0].showGridLines = False
+
+# Column layout for dashboard:
+# A: margin (width 2)
+# B..N: 13 content columns (width ~14 each)
+ws_dash.column_dimensions["A"].width = 2.5
+for col_idx in range(2, 16):
+    ws_dash.column_dimensions[get_column_letter(col_idx)].width = 14.5
+
+# Title Banner (Rows 1-2)
+ws_dash.merge_cells("B1:O1")
+ws_dash["B1"] = "CHEMICAL LABORATORY MANAGEMENT DASHBOARD | لوحة مؤشرات إدارة المعمل الكيميائي"
+ws_dash["B1"].font = Font(name="Calibri", size=18, bold=True, color=WHITE)
+ws_dash["B1"].fill = fill_navy
+ws_dash["B1"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
+ws_dash.row_dimensions[1].height = 34
+
+ws_dash.merge_cells("B2:O2")
+ws_dash["B2"] = "Governmental Water & Environmental Chemistry Laboratory — ISO/IEC 17025:2017 Management Monitoring System (Illustrative Data)"
+ws_dash["B2"].font = font_subtitle
+ws_dash["B2"].fill = fill_navy_med
+ws_dash["B2"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
+ws_dash.row_dimensions[2].height = 22
+
+# Navigation Bar (Row 3)
+nav_items = [
+    ("B3", "Sample Register", "Sample Register"),
+    ("C3", "Test Results", "Analytical Results"),
+    ("D3", "IQC Records", "Quality Control Records"),
+    ("E3", "Quality Plans", "Quality Plans Tracker"),
+    ("F3", "NC & CAPA", "Nonconformities & CAPA"),
+    ("G3", "Equipment", "Equipment & Calibration"),
+    ("H3", "Competence", "Personnel Competence"),
+    ("I3", "Training", "Training Records"),
+    ("J3", "Risks & Opps", "Risk & Opportunities"),
+    ("K3", "PT / ILC", "PT & ILC"),
+    ("L3", "Settings", "Lists & Settings"),
+    ("M3", "User Guide", "User Guide & ISO Mapping"),
+]
+ws_dash.row_dimensions[3].height = 24
+for cell_ref, label, target_sheet in nav_items:
+    c = ws_dash[cell_ref]
+    c.value = label
+    c.font = Font(name="Calibri", size=9, bold=True, underline="single", color=WHITE)
+    c.fill = fill_accent
+    c.alignment = align_center
+    c.border = border_cell
+    c.hyperlink = f"#'{target_sheet}'!A1"
+ws_dash.merge_cells("N3:O3")
+ws_dash["N3"] = "ISO 17025:2017 Traceable"
+ws_dash["N3"].font = Font(name="Calibri", size=9, bold=True, color=ICE_BLUE)
+ws_dash["N3"].fill = fill_accent
+ws_dash["N3"].alignment = align_center
+
+ws_dash.row_dimensions[4].height = 8
+
+# Interactive Filter Bar (Rows 5-6)
+ws_dash.merge_cells("B5:O5")
+ws_dash["B5"] = "INTERACTIVE FILTERS & OVERDUE ALERTS | عوامل التصفية والتنبيهات الفورية"
+ws_dash["B5"].font = font_sec_hdr
+ws_dash["B5"].fill = fill_navy
+ws_dash["B5"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
+ws_dash.row_dimensions[5].height = 24
+
+ws_dash.row_dimensions[6].height = 26
+filters = [
+    ("B6", "Department:", "C6", "All"),
+    ("D6", "Month:", "E6", "All"),
+    ("F6", "Year:", "G6", "All"),
+    ("H6", "Analyst:", "I6", "All"),
+    ("J6", "Test Method:", "K6", "All"),
+]
+for lbl_ref, lbl_txt, val_ref, default_val in filters:
+    ws_dash[lbl_ref] = lbl_txt
+    ws_dash[lbl_ref].font = font_bold
+    ws_dash[lbl_ref].fill = fill_ice
+    ws_dash[lbl_ref].alignment = align_right
+    ws_dash[lbl_ref].border = border_cell
+
+    ws_dash[val_ref] = default_val
+    ws_dash[val_ref].font = Font(name="Calibri", size=10, bold=True, color="1D4ED8")
+    ws_dash[val_ref].fill = fill_white
+    ws_dash[val_ref].alignment = align_center
+    ws_dash[val_ref].border = border_cell
+
+# Overdue Alert Banner in L6:O6
+ws_dash.merge_cells("L6:O6")
+ws_dash["L6"] = '="ALERT: " & (COUNTIF(\'Quality Plans Tracker\'!I5:I12,"Overdue")+COUNTIF(\'Equipment & Calibration\'!I5:I12,"Overdue")) & " Overdue Item(s) | " & COUNTIF(\'Quality Control Records\'!K5:K14,"Out-of-Control") & " QC Out-of-Control"'
+ws_dash["L6"].font = Font(name="Calibri", size=10, bold=True, color=RED_TEXT)
+ws_dash["L6"].fill = fill_red
+ws_dash["L6"].alignment = align_center
+ws_dash["L6"].border = border_cell
+
+# Helper for KPI Card creation (spans 2 columns, 3 rows: Label+ISO, Big Number, Drill-down Link)
+def add_kpi_card(ws, start_col, start_row, title, formula, num_fmt, iso_clause, target_sheet):
+    end_col = start_col + 1
+    ws.merge_cells(start_row=start_row, start_column=start_col, end_row=start_row, end_column=end_col)
+    ws.merge_cells(start_row=start_row+1, start_column=start_col, end_row=start_row+1, end_column=end_col)
+    ws.merge_cells(start_row=start_row+2, start_column=start_col, end_row=start_row+2, end_column=end_col)
+
+    c_top = ws.cell(start_row, start_col, title)
+    c_top.font = font_kpi_lbl
+    c_top.fill = fill_pale
+    c_top.alignment = align_center
+
+    c_mid = ws.cell(start_row+1, start_col, formula)
+    c_mid.font = font_kpi_val
+    c_mid.fill = fill_white
+    c_mid.alignment = align_center
+    c_mid.number_format = num_fmt
+
+    c_bot = ws.cell(start_row+2, start_col, f"{iso_clause}  ↗")
+    c_bot.font = font_kpi_iso
+    c_bot.fill = fill_pale
+    c_bot.alignment = align_center
+    c_bot.hyperlink = f"#'{target_sheet}'!A1"
+
+    for r in range(start_row, start_row+3):
+        for c in range(start_col, end_col+1):
+            ws.cell(r, c).border = Border(
+                left=med_navy if c == start_col else thin_side,
+                right=thin_side,
+                top=thin_side,
+                bottom=thin_side
+            )
+
+# Filter condition helper for Sample Register (Cols D=Dept, F=Month, G=Year, M=Analyst)
+# Using COUNTIFS / SUMIFS with wildcard "*" when filter cell = "All"
+f_dept = 'IF($C$6="All","*",$C$6)'
+f_mon  = 'IF($E$6="All","*",$E$6)'
+f_yr   = 'IF($G$6="All","*",$G$6)'
+f_anl  = 'IF($I$6="All","*",$I$6)'
+f_mth  = 'IF($K$6="All","*",$K$6)'
+
+ws_dash.row_dimensions[7].height = 8
+
+# ---------------------------------------------------------
+# SECTION A: LABORATORY PERFORMANCE OVERVIEW (Rows 8-12)
+# ---------------------------------------------------------
+ws_dash.merge_cells("B8:O8")
+ws_dash["B8"] = "A. LABORATORY PERFORMANCE OVERVIEW | نظرة عامة على أداء المعمل (Clauses 7.1, 7.5, 7.8)"
+ws_dash["B8"].font = font_sec_hdr
+ws_dash["B8"].fill = fill_navy_med
+ws_dash["B8"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
+ws_dash.row_dimensions[8].height = 24
+ws_dash.row_dimensions[9].height = 22
+ws_dash.row_dimensions[10].height = 30
+ws_dash.row_dimensions[11].height = 18
+
+# 7 KPI cards across B..O (Cols 2..15 -> 7 cards of 2 cols each = 14 cols: B-C, D-E, F-G, H-I, J-K, L-M, N-O)
+add_kpi_card(
+    ws_dash, 2, 9, "Total Samples Received\nإجمالي العينات المستلمة",
+    f'=COUNTIFS(\'Sample Register\'!D5:D16,{f_dept},\'Sample Register\'!F5:F16,{f_mon},\'Sample Register\'!M5:M16,{f_anl})',
+    "#,##0", "Clause 7.4", "Sample Register"
+)
+add_kpi_card(
+    ws_dash, 4, 9, "Total Tests Performed\nإجمالي الاختبارات المنفذة",
+    f'=SUMIFS(\'Sample Register\'!J5:J16,\'Sample Register\'!D5:D16,{f_dept},\'Sample Register\'!F5:F16,{f_mon},\'Sample Register\'!M5:M16,{f_anl})',
+    "#,##0", "Clause 7.5", "Sample Register"
+)
+add_kpi_card(
+    ws_dash, 6, 9, "Completed Samples\nالعينات المكتملة",
+    f'=COUNTIFS(\'Sample Register\'!K5:K16,"Completed",\'Sample Register\'!D5:D16,{f_dept},\'Sample Register\'!F5:F16,{f_mon},\'Sample Register\'!M5:M16,{f_anl})',
+    "#,##0", "Clause 7.8", "Sample Register"
+)
+add_kpi_card(
+    ws_dash, 8, 9, "Pending / In-Progress\nقيد التحليل / معلقة",
+    f'=COUNTIFS(\'Sample Register\'!K5:K16,"<>Completed",\'Sample Register\'!D5:D16,{f_dept},\'Sample Register\'!F5:F16,{f_mon},\'Sample Register\'!M5:M16,{f_anl})',
+    "#,##0", "Clause 7.1", "Sample Register"
+)
+add_kpi_card(
+    ws_dash, 10, 9, "On-Time Reporting (%)\nنسبة إصدار التقارير بالوقت",
+    '=IFERROR(COUNTIF(\'Sample Register\'!L5:L16,"On-Time")/COUNTIF(\'Sample Register\'!K5:K16,"Completed"),0)',
+    "0.0%", "Clause 7.8", "Sample Register"
+)
+add_kpi_card(
+    ws_dash, 12, 9, "Workload (Tests/Analyst)\nمعدل عبء العمل",
+    '=IFERROR(D10/N10,0)',
+    "0.0", "Clause 6.2", "Personnel Competence"
+)
+add_kpi_card(
+    ws_dash, 14, 9, "Active Analysts\nالمحللون النشطون",
+    '=COUNTIF(\'Personnel Competence\'!I5:I10,"Authorized")',
+    "#,##0", "Clause 6.2", "Personnel Competence"
+)
+
+ws_dash.row_dimensions[12].height = 8
+
+# ---------------------------------------------------------
+# SECTION B: QUALITY MANAGEMENT PERFORMANCE (Rows 13-17)
+# ---------------------------------------------------------
+ws_dash.merge_cells("B13:O13")
+ws_dash["B13"] = "B. QUALITY MANAGEMENT SYSTEM PERFORMANCE | أداء نظام إدارة الجودة (Clauses 7.9, 7.10, 8.5, 8.7, 8.8, 8.9)"
+ws_dash["B13"].font = font_sec_hdr
+ws_dash["B13"].fill = fill_navy_med
+ws_dash["B13"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
+ws_dash.row_dimensions[13].height = 24
+ws_dash.row_dimensions[14].height = 22
+ws_dash.row_dimensions[15].height = 30
+ws_dash.row_dimensions[16].height = 18
+
+add_kpi_card(
+    ws_dash, 2, 14, "Quality Objectives (%)\nتحقيق أهداف الجودة",
+    '=AVERAGE(\'Quality Plans Tracker\'!J5:J12)',
+    "0.0%", "Clause 8.2", "Quality Plans Tracker"
+)
+add_kpi_card(
+    ws_dash, 4, 14, "Plans Completed (%)\nتنفيذ خطط الجودة",
+    '=COUNTIF(\'Quality Plans Tracker\'!I5:I12,"Completed")/COUNTA(\'Quality Plans Tracker\'!A5:A12)',
+    "0.0%", "Clause 8.2", "Quality Plans Tracker"
+)
+add_kpi_card(
+    ws_dash, 6, 14, "Internal Audits Done\nالمراجعات الداخلية",
+    '=COUNTIFS(\'Quality Plans Tracker\'!C5:C12,"*8.8*",\'Quality Plans Tracker\'!I5:I12,"Completed")',
+    "#,##0", "Clause 8.8", "Quality Plans Tracker"
+)
+add_kpi_card(
+    ws_dash, 8, 14, "Mgmt Reviews Done\nمراجعات الإدارة",
+    '=COUNTIFS(\'Quality Plans Tracker\'!C5:C12,"*8.9*",\'Quality Plans Tracker\'!I5:I12,"Completed")',
+    "#,##0", "Clause 8.9", "Quality Plans Tracker"
+)
+add_kpi_card(
+    ws_dash, 10, 14, "Open / Closed NCs\nحالات عدم المطابقة",
+    '=COUNTIF(\'Nonconformities & CAPA\'!K5:K8,"Open") & " / " & COUNTIF(\'Nonconformities & CAPA\'!K5:K8,"Closed")',
+    "@", "Clause 7.10", "Nonconformities & CAPA"
+)
+add_kpi_card(
+    ws_dash, 12, 14, "CAPA Closure Rate (%)\nنسبة إغلاق CAPA",
+    '=IFERROR(COUNTIF(\'Nonconformities & CAPA\'!K5:K8,"Closed")/COUNTA(\'Nonconformities & CAPA\'!A5:A8),0)',
+    "0.0%", "Clause 8.7", "Nonconformities & CAPA"
+)
+add_kpi_card(
+    ws_dash, 14, 14, "Customer Complaints\nشكاوى العملاء",
+    '=COUNTIF(\'Nonconformities & CAPA\'!C5:C8,"Customer Complaint")',
+    "#,##0", "Clause 7.9", "Nonconformities & CAPA"
+)
+
+ws_dash.row_dimensions[17].height = 8
+
+# ---------------------------------------------------------
+# SECTION C, D, E: QC, EQUIPMENT & COMPETENCE KPIs (Rows 18-22)
+# ---------------------------------------------------------
+ws_dash.merge_cells("B18:O18")
+ws_dash["B18"] = "C. QUALITY CONTROL, EQUIPMENT & COMPETENCE | ضبط الجودة والأجهزة وكفاءة العاملين (Clauses 6.2, 6.4, 6.5, 7.7)"
+ws_dash["B18"].font = font_sec_hdr
+ws_dash["B18"].fill = fill_navy_med
+ws_dash["B18"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
+ws_dash.row_dimensions[18].height = 24
+ws_dash.row_dimensions[19].height = 22
+ws_dash.row_dimensions[20].height = 30
+ws_dash.row_dimensions[21].height = 18
+
+add_kpi_card(
+    ws_dash, 2, 19, "QC Acceptance Rate\nنسبة قبول ضبط الجودة",
+    f'=IFERROR(COUNTIFS(\'Quality Control Records\'!K5:K14,"Accepted",\'Quality Control Records\'!D5:D14,{f_mth})/COUNTIFS(\'Quality Control Records\'!D5:D14,{f_mth}),0)',
+    "0.0%", "Clause 7.7.1", "Quality Control Records"
+)
+add_kpi_card(
+    ws_dash, 4, 19, "Mean CRM Recovery\nمتوسط الاسترجاع (%)",
+    '=IFERROR(AVERAGEIF(\'Quality Control Records\'!E5:E14,"CRM / LCS",\'Quality Control Records\'!H5:H14)/100,0)',
+    "0.0%", "Clause 7.7.1", "Quality Control Records"
+)
+add_kpi_card(
+    ws_dash, 6, 19, "PT Satisfactory (%)\nأداء اختبارات الكفاءة",
+    '=IFERROR(COUNTIF(\'PT & ILC\'!I5:I9,"Satisfactory")/COUNTA(\'PT & ILC\'!A5:A9),0)',
+    "0.0%", "Clause 7.7.2", "PT & ILC"
+)
+add_kpi_card(
+    ws_dash, 8, 19, "Equipment Availability\nجاهزية الأجهزة (%)",
+    '=IFERROR(COUNTIF(\'Equipment & Calibration\'!K5:K12,"Operational")/COUNTA(\'Equipment & Calibration\'!A5:A12),0)',
+    "0.0%", "Clause 6.4", "Equipment & Calibration"
+)
+add_kpi_card(
+    ws_dash, 10, 19, "Overdue / Due Calib.\nمعايرة متأخرة / قريبة",
+    '=COUNTIF(\'Equipment & Calibration\'!I5:I12,"Overdue") & " / " & COUNTIF(\'Equipment & Calibration\'!I5:I12,"Due Soon")',
+    "@", "Clause 6.5", "Equipment & Calibration"
+)
+add_kpi_card(
+    ws_dash, 12, 19, "Training Completion\nتنفيذ خطة التدريب",
+    '=IFERROR(COUNTIF(\'Training Records\'!H5:H9,"Completed")/COUNTA(\'Training Records\'!A5:A9),0)',
+    "0.0%", "Clause 6.2", "Training Records"
+)
+add_kpi_card(
+    ws_dash, 14, 19, "Pending Competence\nتقييم كفاءة معلق",
+    '=COUNTIF(\'Personnel Competence\'!I5:I10,"Pending Evaluation")',
+    "#,##0", "Clause 6.2", "Personnel Competence"
+)
+
+ws_dash.row_dimensions[22].height = 10
+
+# ---------------------------------------------------------
+# CHARTS & SUMMARY TABLES SECTION (Rows 23-37)
+# ---------------------------------------------------------
+ws_dash.merge_cells("B23:O23")
+ws_dash["B23"] = "D. ANALYTICAL WORKLOAD, QC & EQUIPMENT ANALYTICS | الرسوم البيانية وتحليل الأداء"
+ws_dash["B23"].font = font_sec_hdr
+ws_dash["B23"].fill = fill_navy_med
+ws_dash["B23"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
+ws_dash.row_dimensions[23].height = 24
+
+# Dynamic Summary Helper Table on Dashboard (Cols B:E, Rows 25:31) for Charts
+ws_dash.cell(25, 2, "Department").font = font_tbl_hdr
+ws_dash.cell(25, 3, "Samples").font = font_tbl_hdr
+ws_dash.cell(25, 4, "Tests").font = font_tbl_hdr
+for c in range(2, 5):
+    ws_dash.cell(25, c).fill = fill_accent
+    ws_dash.cell(25, c).alignment = align_center
+    ws_dash.cell(25, c).border = border_cell
+
+depts = ["Inorganic Chemistry", "Trace Metals (ICP-OES)", "Organic & Nutrients", "Physical & Demand"]
+for idx, d in enumerate(depts):
+    r = 26 + idx
+    ws_dash.cell(r, 2, d).font = font_data
+    ws_dash.cell(r, 2).border = border_cell
+    ws_dash.cell(r, 3, f'=COUNTIF(\'Sample Register\'!$D$5:$D$16, B{r})').font = font_data
+    ws_dash.cell(r, 3).alignment = align_center
+    ws_dash.cell(r, 3).border = border_cell
+    ws_dash.cell(r, 4, f'=SUMIF(\'Sample Register\'!$D$5:$D$16, B{r}, \'Sample Register\'!$J$5:$J$16)').font = font_data
+    ws_dash.cell(r, 4).alignment = align_center
+    ws_dash.cell(r, 4).border = border_cell
+
+# Equipment & Risk Summary Mini Table (Rows 31:35, Cols B:D)
+ws_dash.cell(31, 2, "Equipment Status").font = font_tbl_hdr
+ws_dash.cell(31, 3, "Count").font = font_tbl_hdr
+ws_dash.cell(31, 2).fill = fill_accent
+ws_dash.cell(31, 3).fill = fill_accent
+ws_dash.cell(31, 2).alignment = align_center
+ws_dash.cell(31, 3).alignment = align_center
+
+eq_stats = [
+    ("Valid Calibration", '=COUNTIF(\'Equipment & Calibration\'!$I$5:$I$12,"Valid")'),
+    ("Due Soon (<=30d)", '=COUNTIF(\'Equipment & Calibration\'!$I$5:$I$12,"Due Soon")'),
+    ("Overdue Calibration", '=COUNTIF(\'Equipment & Calibration\'!$I$5:$I$12,"Overdue")'),
+    ("Out of Service", '=COUNTIF(\'Equipment & Calibration\'!$K$5:$K$12,"Out of Service")'),
+]
+for idx, (lbl, fml) in enumerate(eq_stats):
+    r = 32 + idx
+    ws_dash.cell(r, 2, lbl).font = font_data
+    ws_dash.cell(r, 2).border = border_cell
+    ws_dash.cell(r, 3, fml).font = font_bold
+    ws_dash.cell(r, 3).alignment = align_center
+    ws_dash.cell(r, 3).border = border_cell
+
+# Chart 1: Tests & Samples by Department (BarChart) placed at F24
+chart_dept = BarChart()
+chart_dept.type = "col"
+chart_dept.style = 10
+chart_dept.title = "Samples & Tests by Department"
+chart_dept.y_axis.title = "Count"
+data_ref = Reference(ws_dash, min_col=3, min_row=25, max_col=4, max_row=29)
+cats_ref = Reference(ws_dash, min_col=2, min_row=26, max_row=29)
+chart_dept.add_data(data_ref, titles_from_data=True)
+chart_dept.set_categories(cats_ref)
+chart_dept.width = 14.5
+chart_dept.height = 6.2
+chart_dept.series[0].graphicalProperties.solidFill = "102A43"
+chart_dept.series[1].graphicalProperties.solidFill = "486581"
+ws_dash.add_chart(chart_dept, "F24")
+
+# Chart 2: QC Recovery (%) Trend (LineChart) placed at K24
+chart_qc = LineChart()
+chart_qc.style = 10
+chart_qc.title = "IQC Recovery (%) Trend (Clause 7.7)"
+chart_qc.y_axis.title = "Recovery (%)"
+chart_qc.y_axis.scaling.min = 75
+chart_qc.y_axis.scaling.max = 115
+qc_data_ref = Reference(sheets["Quality Control Records"], min_col=8, min_row=4, max_row=14)
+qc_cats_ref = Reference(sheets["Quality Control Records"], min_col=1, min_row=5, max_row=14)
+chart_qc.add_data(qc_data_ref, titles_from_data=True)
+chart_qc.set_categories(qc_cats_ref)
+chart_qc.width = 14.5
+chart_qc.height = 6.2
+chart_qc.series[0].graphicalProperties.line.solidFill = "334E68"
+chart_qc.series[0].graphicalProperties.line.width = 25000
+ws_dash.add_chart(chart_qc, "K24")
+
+for r in range(24, 37):
+    ws_dash.row_dimensions[r].height = 19
+
+# ---------------------------------------------------------
+# SECTION F: QUALITY PLANS & TASKS TRACKER LIVE VIEW (Rows 38-48)
+# ---------------------------------------------------------
+ws_dash.merge_cells("B38:O38")
+ws_dash["B38"] = "F. QUALITY PLANS & TASKS TRACKER (LIVE STATUS) | متابعة خطط وأنشطة الجودة (Auto-Highlighted)"
+ws_dash["B38"].font = font_sec_hdr
+ws_dash["B38"].fill = fill_navy_med
+ws_dash["B38"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
+ws_dash.row_dimensions[38].height = 24
+
+dash_qp_headers = [
+    ("B", "Task ID"), ("C", "Task / Activity"), ("D", "Task / Activity"), ("E", "Task / Activity"),
+    ("F", "ISO 17025 Clause"), ("G", "ISO 17025 Clause"),
+    ("H", "Responsible Person"), ("I", "Responsible Person"),
+    ("J", "Planned Start"), ("K", "Due Date"), ("L", "Completion Date"),
+    ("M", "Priority"), ("N", "Status"), ("O", "% Done")
+]
+ws_dash.row_dimensions[39].height = 24
+for col_let, h_txt in dash_qp_headers:
+    c = ws_dash[f"{col_let}39"]
+    c.value = h_txt
+    c.font = font_tbl_hdr
+    c.fill = fill_accent
+    c.alignment = align_center
+    c.border = border_cell
+
+ws_dash.merge_cells("C39:E39")
+ws_dash.merge_cells("F39:G39")
+ws_dash.merge_cells("H39:I39")
+
+# Link rows 40..47 directly to 'Quality Plans Tracker' rows 5..12
+for idx in range(8):
+    src_r = 5 + idx
+    dst_r = 40 + idx
+    ws_dash.row_dimensions[dst_r].height = 22
+    ws_dash.merge_cells(start_row=dst_r, start_column=3, end_row=dst_r, end_column=5)
+    ws_dash.merge_cells(start_row=dst_r, start_column=6, end_row=dst_r, end_column=7)
+    ws_dash.merge_cells(start_row=dst_r, start_column=8, end_row=dst_r, end_column=9)
+
+    ws_dash.cell(dst_r, 2, f"='Quality Plans Tracker'!A{src_r}").alignment = align_center
+    ws_dash.cell(dst_r, 3, f"='Quality Plans Tracker'!B{src_r}").alignment = align_left
+    ws_dash.cell(dst_r, 6, f"='Quality Plans Tracker'!C{src_r}").alignment = align_left
+    ws_dash.cell(dst_r, 8, f"='Quality Plans Tracker'!D{src_r}").alignment = align_left
+    ws_dash.cell(dst_r, 10, f"='Quality Plans Tracker'!E{src_r}").number_format = "YYYY-MM-DD"
+    ws_dash.cell(dst_r, 10).alignment = align_center
+    ws_dash.cell(dst_r, 11, f"='Quality Plans Tracker'!F{src_r}").number_format = "YYYY-MM-DD"
+    ws_dash.cell(dst_r, 11).alignment = align_center
+    ws_dash.cell(dst_r, 12, f'=IF(\'Quality Plans Tracker\'!G{src_r}="","-",\'Quality Plans Tracker\'!G{src_r})').number_format = "YYYY-MM-DD"
+    ws_dash.cell(dst_r, 12).alignment = align_center
+    ws_dash.cell(dst_r, 13, f"='Quality Plans Tracker'!H{src_r}").alignment = align_center
+    ws_dash.cell(dst_r, 14, f"='Quality Plans Tracker'!I{src_r}").alignment = align_center
+    ws_dash.cell(dst_r, 15, f"='Quality Plans Tracker'!J{src_r}").number_format = "0%"
+    ws_dash.cell(dst_r, 15).alignment = align_center
+
+    for c_i in range(2, 16):
+        cell = ws_dash.cell(dst_r, c_i)
+        cell.font = font_data
+        cell.border = border_cell
+
+# ---------------------------------------------------------
+# DATA VALIDATIONS
+# ---------------------------------------------------------
+dv_dept = DataValidation(type="list", formula1='="All,Inorganic Chemistry,Trace Metals (ICP-OES),Organic & Nutrients,Physical & Demand"', allow_blank=False)
+dv_mon  = DataValidation(type="list", formula1='="All,Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec"', allow_blank=False)
+dv_yr   = DataValidation(type="list", formula1='="All,2025,2026,2027"', allow_blank=False)
+dv_anl  = DataValidation(type="list", formula1='="All,Dr. Mona Khamis,Ahmed Hassan,Sara Mahmoud,Omar Farouk,Nadia Youssef,Tarek El-Sayed"', allow_blank=False)
+dv_mth  = DataValidation(type="list", formula1='="All,pH & EC (APHA 4500-H+/2510),Major Cations Na/Ca/Mg (APHA 3120),Nitrate & Sulfate (IC - EPA 300.0),COD & BOD5 (APHA 5220/5210),Heavy Metals Pb/Cd/As (ICP-OES),Turbidity & TDS (APHA 2130/2540)"', allow_blank=False)
+
+ws_dash.add_data_validation(dv_dept); dv_dept.add("C6")
+ws_dash.add_data_validation(dv_mon);  dv_mon.add("E6")
+ws_dash.add_data_validation(dv_yr);   dv_yr.add("G6")
+ws_dash.add_data_validation(dv_anl);  dv_anl.add("I6")
+ws_dash.add_data_validation(dv_mth);  dv_mth.add("K6")
+
+# Data validations on data-entry sheets
+dv_sr_dept = DataValidation(type="list", formula1="='Lists & Settings'!$A$5:$A$9", allow_blank=True)
+sheets["Sample Register"].add_data_validation(dv_sr_dept)
+dv_sr_dept.add("D5:D50")
+
+dv_sr_stat = DataValidation(type="list", formula1='="Completed,In Progress,Pending"', allow_blank=True)
+sheets["Sample Register"].add_data_validation(dv_sr_stat)
+dv_sr_stat.add("K5:K50")
+
+dv_qp_prio = DataValidation(type="list", formula1="='Lists & Settings'!$E$5:$E$8", allow_blank=True)
+sheets["Quality Plans Tracker"].add_data_validation(dv_qp_prio)
+dv_qp_prio.add("H5:H50")
+
+# ---------------------------------------------------------
+# CONDITIONAL FORMATTING (Green = Completed, Yellow = In Progress / Due Soon, Red = Overdue / Out-of-Control)
+# ---------------------------------------------------------
+def apply_status_cf(ws, cell_range):
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="equal", formula=['"Completed"'], fill=fill_green, font=Font(color=GREEN_TEXT, bold=True)))
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="equal", formula=['"Accepted"'], fill=fill_green, font=Font(color=GREEN_TEXT, bold=True)))
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="equal", formula=['"Valid"'], fill=fill_green, font=Font(color=GREEN_TEXT, bold=True)))
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="equal", formula=['"Operational"'], fill=fill_green, font=Font(color=GREEN_TEXT, bold=True)))
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="equal", formula=['"Closed"'], fill=fill_green, font=Font(color=GREEN_TEXT, bold=True)))
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="equal", formula=['"Satisfactory"'], fill=fill_green, font=Font(color=GREEN_TEXT, bold=True)))
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="equal", formula=['"Authorized"'], fill=fill_green, font=Font(color=GREEN_TEXT, bold=True)))
+
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="equal", formula=['"In Progress"'], fill=fill_yellow, font=Font(color=YELLOW_TEXT, bold=True)))
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="equal", formula=['"Due Soon"'], fill=fill_yellow, font=Font(color=YELLOW_TEXT, bold=True)))
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="equal", formula=['"Pending"'], fill=fill_yellow, font=Font(color=YELLOW_TEXT, bold=True)))
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="equal", formula=['"Pending Evaluation"'], fill=fill_yellow, font=Font(color=YELLOW_TEXT, bold=True)))
+
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="equal", formula=['"Overdue"'], fill=fill_red, font=Font(color=RED_TEXT, bold=True)))
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="equal", formula=['"Out-of-Control"'], fill=fill_red, font=Font(color=RED_TEXT, bold=True)))
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="equal", formula=['"Out of Service"'], fill=fill_red, font=Font(color=RED_TEXT, bold=True)))
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="equal", formula=['"Open"'], fill=fill_red, font=Font(color=RED_TEXT, bold=True)))
+
+apply_status_cf(ws_dash, "N40:N47")
+apply_status_cf(sheets["Quality Plans Tracker"], "I5:I20")
+apply_status_cf(sheets["Sample Register"], "K5:L20")
+apply_status_cf(sheets["Quality Control Records"], "K5:K20")
+apply_status_cf(sheets["Equipment & Calibration"], "I5:K20")
+apply_status_cf(sheets["Nonconformities & CAPA"], "K5:K20")
+apply_status_cf(sheets["Personnel Competence"], "I5:I20")
+apply_status_cf(sheets["PT & ILC"], "I5:I20")
+
+# ---------------------------------------------------------
+# 13. USER GUIDE & ISO MAPPING
+# ---------------------------------------------------------
+ws_ug = sheets["User Guide & ISO Mapping"]
+ws_ug.merge_cells("A1:E1")
+ws_ug["A1"] = "User Guide, KPI Definitions & ISO/IEC 17025:2017 Traceability Matrix"
+ws_ug["A1"].font = font_title
+ws_ug["A1"].fill = fill_navy
+ws_ug["A1"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
+ws_ug.row_dimensions[1].height = 32
+
+ws_ug.merge_cells("A2:D2")
+ws_ug["A2"] = "Governance, Formula Protection, Change Control & ISO Compliance Statement"
+ws_ug["A2"].font = font_subtitle
+ws_ug["A2"].fill = fill_navy_med
+ws_ug["A2"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
+ws_ug["E2"] = "← Dashboard"
+ws_ug["E2"].font = Font(name="Calibri", size=10, bold=True, underline="single", color=WHITE)
+ws_ug["E2"].fill = fill_navy_med
+ws_ug["E2"].alignment = align_center
+ws_ug["E2"].hyperlink = "#'Management Dashboard'!A1"
+ws_ug.row_dimensions[2].height = 22
+
+ug_headers = ["Section / Area", "KPI / Indicator", "Formula / Calculation Logic", "ISO/IEC 17025:2017 Clause", "Required Objective Evidence & Records"]
+ug_rows = [
+    ["Compliance Disclaimer", "ISO/IEC 17025:2017 Assurance", "Dashboard indicators provide management visibility only; compliance requires verified technical records.", "All Clauses (4–8)", "Controlled SOPs, raw instrument printouts, calibration certificates, audit reports, and signed MR minutes."],
+    ["A. Lab Performance", "On-Time Reporting (%)", "COUNTIF(On-Time) / COUNTIF(Completed Samples)", "Clause 7.8 (Reporting of Results)", "Sample Register timestamps, issued Test Reports, and client turnaround agreements (Clause 7.1)."],
+    ["A. Lab Performance", "Laboratory Workload", "Total Tests Performed / Number of Active Authorized Analysts", "Clause 6.2 & 7.1", "Sample Register test counts and Personnel Authorization Matrix."],
+    ["B. Quality Management", "Quality Objectives (%)", "AVERAGE(% Completion across Quality Plans Tracker)", "Clause 8.2 & 8.9", "Approved Annual Quality Plan, KPI review logs, and Management Review outputs."],
+    ["B. Quality Management", "NC & CAPA Closure Rate", "Closed NCs / Total Recorded NCs", "Clause 7.10 & 8.7", "NC/CAPA Register, Root Cause Analysis forms, and post-implementation effectiveness verification records."],
+    ["C. Quality Control", "QC Acceptance Rate (%)", "COUNTIF(Accepted QC Runs) / Total QC Runs", "Clause 7.7.1", "Control charts, CRM certificates, method blank logs, duplicate RPD sheets, and spike recovery logs."],
+    ["C. Quality Control", "PT Performance (%)", "COUNTIF(|Z-Score| <= 2.0) / Total PT Parameters", "Clause 7.7.2", "External PT provider final reports, Z-score evaluations, and CAPA for any |Z| > 2."],
+    ["D. Equipment", "Equipment Availability (%)", "Operational Equipment / Total Registered Equipment", "Clause 6.4 & 6.5", "Equipment Master List, ISO 17025 accredited calibration certificates, intermediate check & PM logs."],
+    ["E. Competence", "Training & Authorization", "Completed Training / Planned Training; Authorized Analysts count", "Clause 6.2", "Training attendance certificates, exam/practical scores, and signed Method Authorization Forms."],
+    ["Data Governance", "Change Control & Backup", "Input cells unlocked; formula & dashboard cells locked. Daily automated backup required.", "Clause 7.11 & 8.3", "Document control revision history, access control logs, and off-site/server backup verification logs."],
+]
+
+for c_idx, h in enumerate(ug_headers, 1):
+    c = ws_ug.cell(4, c_idx, h)
+    c.font = font_tbl_hdr
+    c.fill = fill_accent
+    c.alignment = align_center
+    c.border = border_cell
+ws_ug.row_dimensions[4].height = 26
+
+for r_off, r_vals in enumerate(ug_rows):
+    r_idx = 5 + r_off
+    ws_ug.row_dimensions[r_idx].height = 36
+    for c_idx, val in enumerate(r_vals, 1):
+        c = ws_ug.cell(r_idx, c_idx, val)
+        c.font = font_bold if c_idx <= 2 else font_data
+        c.fill = fill_white if r_off % 2 == 0 else fill_pale
+        c.alignment = align_left
+        c.border = border_cell
+
+for idx, w in enumerate([22, 26, 40, 26, 48], 1):
+    ws_ug.column_dimensions[get_column_letter(idx)].width = w
+
+# Protect Dashboard formula cells while keeping filter dropdowns unlocked
+ws_dash.protection.sheet = True
+for row in ws_dash.iter_rows():
+    for cell in row:
+        cell.protection = openpyxl.styles.Protection(locked=True)
+for unlock_ref in ["C6", "E6", "G6", "I6", "K6"]:
+    ws_dash[unlock_ref].protection = openpyxl.styles.Protection(locked=False)
+
+output_path = "Chemical_Laboratory_Management_Dashboard_ISO17025.xlsx"
+wb.save(output_path)
+print("Saved:", output_path)
